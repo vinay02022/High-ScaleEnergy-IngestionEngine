@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # ---- NestJS API ----
+  api:
+    build: .
+    container_name: energy-api
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      DATABASE_URL: postgresql://energy_user:energy_pass@postgres:5432/energy_db?schema=public
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---- PostgreSQL ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: energy-postgres
+    environment:
+      POSTGRES_USER: energy_user
+      POSTGRES_PASSWORD: energy_pass
+      POSTGRES_DB: energy_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U energy_user -d energy_db']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
