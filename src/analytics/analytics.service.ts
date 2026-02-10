@@ -1,16 +1,85 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../db/prisma.service';
+
+// Row shape returned by $queryRaw for aggregation queries
+interface AcRow {
+  ac_total: number | null;
+}
+interface DcRow {
+  dc_total: number | null;
+  avg_battery_temp: number | null;
+}
 
 @Injectable()
 export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ── Meter analytics (last 24 h) ─────────────────────────────────────────
+  // ── Performance endpoint ─────────────────────────────────────────────────
 
   /**
-   * Queries meter_readings WHERE ts >= cutoff.
-   * Hits the (meterId, ts) index — no full-table scan.
+   * GET /v1/analytics/performance/:vehicleId
+   *
+   * 1. Lookup meterId from vehicle_meter_map
+   * 2. 24 h window
+   * 3. Raw SQL aggregates on indexed (meter_id, ts) and (vehicle_id, ts)
+   *    columns — Postgres uses index range scans, no full-table scans.
+   * 4. efficiency = dc / ac  (0 when ac == 0)
    */
+  async getPerformance(vehicleId: string) {
+    // 1. Map lookup
+    const mapping = await this.prisma.vehicleMeterMap.findUnique({
+      where: { vehicleId },
+    });
+    if (!mapping) {
+      throw new NotFoundException(
+        `No meter mapping found for vehicle "${vehicleId}"`,
+      );
+    }
+    const { meterId } = mapping;
+
+    // 2. 24 h window
+    const windowEnd = new Date();
+    const windowStart = new Date(windowEnd.getTime() - 24 * 60 * 60 * 1000);
+
+    // 3a. AC total — meter_readings, index (meter_id, ts)
+    const [acRow] = await this.prisma.$queryRaw<AcRow[]>`
+      SELECT COALESCE(SUM(kwh_consumed_ac), 0) AS ac_total
+      FROM meter_readings
+      WHERE meter_id = ${meterId}
+        AND ts BETWEEN ${windowStart}::timestamptz AND ${windowEnd}::timestamptz`;
+
+    // 3b. DC total + avg battery temp — vehicle_readings, index (vehicle_id, ts)
+    const [dcRow] = await this.prisma.$queryRaw<DcRow[]>`
+      SELECT COALESCE(SUM(kwh_delivered_dc), 0)  AS dc_total,
+             COALESCE(AVG(battery_temp), 0)       AS avg_battery_temp
+      FROM vehicle_readings
+      WHERE vehicle_id = ${vehicleId}
+        AND ts BETWEEN ${windowStart}::timestamptz AND ${windowEnd}::timestamptz`;
+
+    const acConsumedTotal = Number(acRow.ac_total);
+    const dcDeliveredTotal = Number(dcRow.dc_total);
+    const avgBatteryTemp = Number(dcRow.avg_battery_temp);
+
+    // 4. Efficiency ratio — guard against division by zero
+    const efficiencyRatio =
+      acConsumedTotal === 0
+        ? null
+        : parseFloat((dcDeliveredTotal / acConsumedTotal).toFixed(4));
+
+    return {
+      vehicleId,
+      meterId,
+      windowStart: windowStart.toISOString(),
+      windowEnd: windowEnd.toISOString(),
+      acConsumedTotal,
+      dcDeliveredTotal,
+      efficiencyRatio,
+      avgBatteryTemp,
+    };
+  }
+
+  // ── Existing summary endpoints ───────────────────────────────────────────
+
   async getMeterSummary24h() {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
@@ -40,8 +109,6 @@ export class AnalyticsService {
       periodEnd: new Date().toISOString(),
     };
   }
-
-  // ── Vehicle analytics (last 24 h) ───────────────────────────────────────
 
   async getVehicleSummary24h() {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -76,8 +143,6 @@ export class AnalyticsService {
     };
   }
 
-  // ── Per-meter stats ─────────────────────────────────────────────────────
-
   async getMeterStats(meterId: string) {
     const [current, historyAgg] = await Promise.all([
       this.prisma.meterCurrent.findUnique({ where: { meterId } }),
@@ -100,8 +165,6 @@ export class AnalyticsService {
       },
     };
   }
-
-  // ── Per-vehicle stats ───────────────────────────────────────────────────
 
   async getVehicleStats(vehicleId: string) {
     const [current, historyAgg] = await Promise.all([
