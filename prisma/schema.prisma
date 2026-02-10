@@ -12,23 +12,23 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model MeterReading {
-  id             String   @id @default(uuid()) @db.Uuid
-  meterId        String   @db.VarChar(100)
-  kwhConsumedAc  Float    @default(0)
-  voltage        Float    @default(0)
-  ts             DateTime @default(now()) @db.Timestamptz()
+  id             String   @id @default(uuid()) @map("id") @db.Uuid
+  meterId        String   @map("meter_id") @db.VarChar(100)
+  kwhConsumedAc  Float    @default(0) @map("kwh_consumed_ac")
+  voltage        Float    @default(0) @map("voltage")
+  ts             DateTime @default(now()) @map("ts") @db.Timestamptz()
 
   @@index([meterId, ts])
   @@map("meter_readings")
 }
 
 model VehicleReading {
-  id             String   @id @default(uuid()) @db.Uuid
-  vehicleId      String   @db.VarChar(100)
-  soc            Float    @default(0)
-  kwhDeliveredDc Float    @default(0)
-  batteryTemp    Float    @default(0)
-  ts             DateTime @default(now()) @db.Timestamptz()
+  id             String   @id @default(uuid()) @map("id") @db.Uuid
+  vehicleId      String   @map("vehicle_id") @db.VarChar(100)
+  soc            Float    @default(0) @map("soc")
+  kwhDeliveredDc Float    @default(0) @map("kwh_delivered_dc")
+  batteryTemp    Float    @default(0) @map("battery_temp")
+  ts             DateTime @default(now()) @map("ts") @db.Timestamptz()
 
   @@index([vehicleId, ts])
   @@map("vehicle_readings")
@@ -39,20 +39,20 @@ model VehicleReading {
 // ---------------------------------------------------------------------------
 
 model MeterCurrent {
-  meterId        String   @id @db.VarChar(100)
-  kwhConsumedAc  Float    @default(0)
-  voltage        Float    @default(0)
-  ts             DateTime @default(now()) @db.Timestamptz()
+  meterId        String   @id @map("meter_id") @db.VarChar(100)
+  kwhConsumedAc  Float    @default(0) @map("kwh_consumed_ac")
+  voltage        Float    @default(0) @map("voltage")
+  ts             DateTime @default(now()) @map("ts") @db.Timestamptz()
 
   @@map("meter_current")
 }
 
 model VehicleCurrent {
-  vehicleId      String   @id @db.VarChar(100)
-  soc            Float    @default(0)
-  kwhDeliveredDc Float    @default(0)
-  batteryTemp    Float    @default(0)
-  ts             DateTime @default(now()) @db.Timestamptz()
+  vehicleId      String   @id @map("vehicle_id") @db.VarChar(100)
+  soc            Float    @default(0) @map("soc")
+  kwhDeliveredDc Float    @default(0) @map("kwh_delivered_dc")
+  batteryTemp    Float    @default(0) @map("battery_temp")
+  ts             DateTime @default(now()) @map("ts") @db.Timestamptz()
 
   @@map("vehicle_current")
 }
@@ -62,9 +62,9 @@ model VehicleCurrent {
 // ---------------------------------------------------------------------------
 
 model VehicleMeterMap {
-  vehicleId String   @id @db.VarChar(100)
-  meterId   String   @db.VarChar(100)
-  createdAt DateTime @default(now()) @db.Timestamptz()
+  vehicleId String   @id @map("vehicle_id") @db.VarChar(100)
+  meterId   String   @map("meter_id") @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   @@map("vehicle_meter_map")
 }
