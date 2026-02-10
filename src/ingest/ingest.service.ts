@@ -13,96 +13,84 @@ export class IngestService {
 
   // ── Meter ────────────────────────────────────────────────────────────────
 
-  async ingestMeterReading(dto: CreateMeterReadingDto) {
-    return this.ingestMeterBatch([dto]);
-  }
-
   /**
-   * Batch meter ingestion in one transaction:
-   *   1. INSERT into meter_readings  (history — append-only)
-   *   2. UPSERT into meter_current   (latest state per meter)
+   * 1. INSERT into meter_readings (history, append-only)
+   * 2. Raw SQL UPSERT into meter_current — only overwrites if incoming ts
+   *    is newer than what's already stored (conditional timestamp update).
    */
-  async ingestMeterBatch(dtos: CreateMeterReadingDto[]) {
+  async ingestMeter(dto: CreateMeterReadingDto) {
+    const ts = new Date(dto.timestamp);
+
     await this.prisma.$transaction(async (tx) => {
-      // 1. History — bulk append
-      await tx.meterReading.createMany({
-        data: dtos.map((d) => ({
-          meterId: d.meterId,
-          kwhConsumedAc: d.kwhConsumedAc,
-          voltage: d.voltage,
-          ts: new Date(d.ts),
-        })),
+      // History — append
+      await tx.meterReading.create({
+        data: {
+          meterId: dto.meterId,
+          kwhConsumedAc: dto.kwhConsumedAc,
+          voltage: dto.voltage,
+          ts,
+        },
       });
 
-      // 2. Current — upsert latest state per meter
-      for (const d of dtos) {
-        await tx.meterCurrent.upsert({
-          where: { meterId: d.meterId },
-          create: {
-            meterId: d.meterId,
-            kwhConsumedAc: d.kwhConsumedAc,
-            voltage: d.voltage,
-            ts: new Date(d.ts),
-          },
-          update: {
-            kwhConsumedAc: d.kwhConsumedAc,
-            voltage: d.voltage,
-            ts: new Date(d.ts),
-          },
-        });
-      }
+      // Current — raw UPSERT with conditional ts guard
+      await tx.$executeRawUnsafe(
+        `INSERT INTO meter_current ("meterId", "kwhConsumedAc", "voltage", "ts")
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT ("meterId")
+         DO UPDATE SET
+           "kwhConsumedAc" = EXCLUDED."kwhConsumedAc",
+           "voltage"       = EXCLUDED."voltage",
+           "ts"            = EXCLUDED."ts"
+         WHERE meter_current."ts" < EXCLUDED."ts"`,
+        dto.meterId,
+        dto.kwhConsumedAc,
+        dto.voltage,
+        ts,
+      );
     });
 
-    this.logger.log(`Ingested ${dtos.length} meter readings`);
-    return { inserted: dtos.length };
+    this.logger.log(`Ingested meter reading for ${dto.meterId}`);
   }
 
   // ── Vehicle ──────────────────────────────────────────────────────────────
 
-  async ingestVehicleReading(dto: CreateVehicleReadingDto) {
-    return this.ingestVehicleBatch([dto]);
-  }
-
   /**
-   * Batch vehicle ingestion in one transaction:
-   *   1. INSERT into vehicle_readings (history — append-only)
-   *   2. UPSERT into vehicle_current  (latest state per vehicle)
+   * Same pattern: INSERT history + raw SQL UPSERT current with ts guard.
    */
-  async ingestVehicleBatch(dtos: CreateVehicleReadingDto[]) {
+  async ingestVehicle(dto: CreateVehicleReadingDto) {
+    const ts = new Date(dto.timestamp);
+
     await this.prisma.$transaction(async (tx) => {
-      // 1. History — bulk append
-      await tx.vehicleReading.createMany({
-        data: dtos.map((d) => ({
-          vehicleId: d.vehicleId,
-          soc: d.soc,
-          kwhDeliveredDc: d.kwhDeliveredDc,
-          batteryTemp: d.batteryTemp,
-          ts: new Date(d.ts),
-        })),
+      // History — append
+      await tx.vehicleReading.create({
+        data: {
+          vehicleId: dto.vehicleId,
+          soc: dto.soc,
+          kwhDeliveredDc: dto.kwhDeliveredDc,
+          batteryTemp: dto.batteryTemp,
+          ts,
+        },
       });
 
-      // 2. Current — upsert latest state per vehicle
-      for (const d of dtos) {
-        await tx.vehicleCurrent.upsert({
-          where: { vehicleId: d.vehicleId },
-          create: {
-            vehicleId: d.vehicleId,
-            soc: d.soc,
-            kwhDeliveredDc: d.kwhDeliveredDc,
-            batteryTemp: d.batteryTemp,
-            ts: new Date(d.ts),
-          },
-          update: {
-            soc: d.soc,
-            kwhDeliveredDc: d.kwhDeliveredDc,
-            batteryTemp: d.batteryTemp,
-            ts: new Date(d.ts),
-          },
-        });
-      }
+      // Current — raw UPSERT with conditional ts guard
+      await tx.$executeRawUnsafe(
+        `INSERT INTO vehicle_current ("vehicleId", "soc", "kwhDeliveredDc", "batteryTemp", "ts")
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT ("vehicleId")
+         DO UPDATE SET
+           "soc"            = EXCLUDED."soc",
+           "kwhDeliveredDc" = EXCLUDED."kwhDeliveredDc",
+           "batteryTemp"    = EXCLUDED."batteryTemp",
+           "ts"             = EXCLUDED."ts"
+         WHERE vehicle_current."ts" < EXCLUDED."ts"`,
+        dto.vehicleId,
+        dto.soc,
+        dto.kwhDeliveredDc,
+        dto.batteryTemp,
+        ts,
+      );
     });
 
-    this.logger.log(`Ingested ${dtos.length} vehicle readings`);
-    return { inserted: dtos.length };
+    this.logger.log(`Ingested vehicle reading for ${dto.vehicleId}`);
   }
 }
