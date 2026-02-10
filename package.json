@@ -14,7 +14,8 @@
     "prisma:studio": "prisma studio",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
-    "test:cov": "jest --coverage"
+    "test:cov": "jest --coverage",
+    "load": "ts-node scripts/load.ts"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

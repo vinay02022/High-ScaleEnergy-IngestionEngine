@@ -8,7 +8,7 @@ services:
     ports:
       - '${PORT:-3000}:3000'
     environment:
-      DATABASE_URL: postgresql://energy_user:energy_pass@postgres:5432/energy_db?schema=public
+      DATABASE_URL: postgresql://energy_user:energy_pass@postgres:5432/energy_db?schema=public&connection_limit=20&pool_timeout=30
       PORT: 3000
     depends_on:
       postgres:
