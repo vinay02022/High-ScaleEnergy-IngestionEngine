@@ -212,7 +212,42 @@ The `@prisma/adapter-pg` driver manages the underlying `pg` connection pool. For
 
 ---
 
-## How this scales to millions of readings/day
+## Data correlation: how meter and vehicle streams are linked
+
+The system ingests **two independent streams** — one from the Smart Meter (grid-side AC) and one from the EV charger/vehicle (DC + battery). These arrive separately but must be correlated for analytics.
+
+The `vehicle_meter_map` table links each vehicle to its physical meter:
+
+```
+vehicle_meter_map
+  VEH-001  →  METER-001
+  VEH-002  →  METER-002
+```
+
+When `GET /v1/analytics/performance/:vehicleId` is called:
+1. Look up the mapped `meterId` from `vehicle_meter_map` (404 if unmapped)
+2. Query `meter_readings` for that meter's AC consumption in the 24h window
+3. Query `vehicle_readings` for that vehicle's DC delivery + battery temp
+4. Compute efficiency = DC / AC (a ratio < 0.85 may indicate hardware fault or energy leakage)
+
+This correlation is what makes the **Power Loss Thesis** actionable — you can't detect conversion inefficiency without joining both streams.
+
+---
+
+## Handling 14.4 million records/day
+
+### The math
+
+| Factor | Value |
+|--------|-------|
+| Devices (meters + vehicles) | 10,000+ |
+| Heartbeat interval | every 60 seconds |
+| Readings per device per day | 1,440 (60 min × 24 h) |
+| **Total daily ingestion** | **~14.4 million readings** |
+
+Each reading triggers **2 DB writes** (1 history INSERT + 1 current UPSERT), so the system handles ~28.8M write operations/day.
+
+### Why it works
 
 | Technique | Benefit |
 |-----------|---------|
@@ -225,9 +260,9 @@ The `@prisma/adapter-pg` driver manages the underlying `pg` connection pool. For
 
 ### Trade-offs
 
-- `synchronize: true` in dev — migrations should be used in production
-- No partitioning yet — at >100M rows, partition history by month
-- Single-node Postgres — for true HA, add read replicas
+- Prisma `synchronize` in dev — use `prisma migrate deploy` in production
+- No partitioning yet — at >100M rows, partition history tables by month
+- Single-node Postgres — for true HA, add read replicas or use managed PG
 
 ---
 
