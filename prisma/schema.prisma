@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// HISTORY tables — append-only INSERT for every reading
+// ---------------------------------------------------------------------------
+
+model MeterReading {
+  id             String   @id @default(uuid()) @db.Uuid
+  meterId        String   @db.VarChar(100)
+  kwhConsumedAc  Float    @default(0)
+  voltage        Float    @default(0)
+  ts             DateTime @default(now()) @db.Timestamptz()
+
+  @@index([meterId, ts])
+  @@map("meter_readings")
+}
+
+model VehicleReading {
+  id             String   @id @default(uuid()) @db.Uuid
+  vehicleId      String   @db.VarChar(100)
+  soc            Float    @default(0)
+  kwhDeliveredDc Float    @default(0)
+  batteryTemp    Float    @default(0)
+  ts             DateTime @default(now()) @db.Timestamptz()
+
+  @@index([vehicleId, ts])
+  @@map("vehicle_readings")
+}
+
+// ---------------------------------------------------------------------------
+// CURRENT tables — UPSERT (one row per meter / vehicle = latest state)
+// ---------------------------------------------------------------------------
+
+model MeterCurrent {
+  meterId        String   @id @db.VarChar(100)
+  kwhConsumedAc  Float    @default(0)
+  voltage        Float    @default(0)
+  ts             DateTime @default(now()) @db.Timestamptz()
+
+  @@map("meter_current")
+}
+
+model VehicleCurrent {
+  vehicleId      String   @id @db.VarChar(100)
+  soc            Float    @default(0)
+  kwhDeliveredDc Float    @default(0)
+  batteryTemp    Float    @default(0)
+  ts             DateTime @default(now()) @db.Timestamptz()
+
+  @@map("vehicle_current")
+}
+
+// ---------------------------------------------------------------------------
+// MAPPING — which vehicle is connected to which meter
+// ---------------------------------------------------------------------------
+
+model VehicleMeterMap {
+  vehicleId String   @id @db.VarChar(100)
+  meterId   String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @db.Timestamptz()
+
+  @@map("vehicle_meter_map")
+}
